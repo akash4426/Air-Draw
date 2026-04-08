@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Neon Air Drawing App</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #111; /* Dark canvas background */
+      color: #fff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    #canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    
+    #video {
+      display: none; /* Hide the raw webcam feed */
+    }
+    
+    .ui-panel {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid #333;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      z-index: 10;
+    }
+
+    .ui-group {
+      margin-bottom: 15px;
+    }
+
+    .ui-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 15px;
+      font-size: 14px;
+    }
+
+    #statusText {
+      font-weight: bold;
+      color: #00ffcc;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #444;
+    }
+    
+    .instructions {
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="ui-panel">
+    <div class="ui-group">
+      <label>
+        Neon Color: 
+        <input type="color" id="colorPicker" value="#00ffff">
+      </label>
+    </div>
+    <div class="ui-group">
+      <label>
+        Thickness: 
+        <input type="range" id="lineWidth" min="2" max="25" value="8">
+      </label>
+    </div>
+    <div id="statusText">Status: Loading Camera...</div>
+    <div class="instructions">
+      <strong>Gestures:</strong><br>
+      ☝️ 1 Finger (Index) = Draw<br>
+      ✊ Closed Fist = Pause/Move<br>
+      🖐️ Open Palm = Erase
+    </div>
+  </div>
+
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const colorPicker = document.getElementById('colorPicker');
+    const lineWidthSlider = document.getElementById('lineWidth');
+    const statusText = document.getElementById('statusText');
+
+    // Make canvas full screen
+    function resizeCanvas() {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvasElement.width;
+      tempCanvas.height = canvasElement.height;
+      tempCanvas.getContext('2d').drawImage(canvasElement, 0, 0);
+
+      canvasElement.width = window.innerWidth;
+      canvasElement.height = window.innerHeight;
+      canvasCtx.drawImage(tempCanvas, 0, 0);
+    }
+    window.addEventListener('resize', resizeCanvas);
+    canvasElement.width = window.innerWidth;
+    canvasElement.height = window.innerHeight;
+
+    let lastX = null;
+    let lastY = null;
+
+    function onResults(results) {
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+
+        // y-coordinates grow downwards. tip.y < pip.y means the finger is pointing UP.
+        const indexUp = landmarks[8].y < landmarks[6].y;
+        const middleUp = landmarks[12].y < landmarks[10].y;
+        const ringUp = landmarks[16].y < landmarks[14].y;
+        const pinkyUp = landmarks[20].y < landmarks[18].y;
+
+        // Mirror the X coordinate for a natural drawing feel
+        const currentX = (1 - landmarks[8].x) * canvasElement.width;
+        const currentY = landmarks[8].y * canvasElement.height;
+
+        // Palm center (for the eraser)
+        const palmX = (1 - landmarks[9].x) * canvasElement.width;
+        const palmY = landmarks[9].y * canvasElement.height;
+
+        // Determine Gestures
+        const isFist = !indexUp && !middleUp && !ringUp && !pinkyUp;
+        const isOpenPalm = indexUp && middleUp && ringUp && pinkyUp;
+        const isDrawing = indexUp && !middleUp && !ringUp && !pinkyUp;
+
+        if (isFist) {
+          statusText.innerText = "Status: ✊ Paused";
+          statusText.style.color = "#ffaa00";
+          lastX = null;
+          lastY = null;
+        } 
+        else if (isOpenPalm) {
+          statusText.innerText = "Status: 🖐️ Erasing";
+          statusText.style.color = "#ff5555";
+          
+          // Act as a large eraser brush around the palm
+          canvasCtx.globalCompositeOperation = 'destination-out';
+          canvasCtx.beginPath();
+          canvasCtx.arc(palmX, palmY, 80, 0, 2 * Math.PI);
+          canvasCtx.fill();
+          canvasCtx.globalCompositeOperation = 'source-over'; // Reset to default
+          
+          lastX = null;
+          lastY = null;
+        } 
+        else if (isDrawing) {
+          statusText.innerText = "Status: ☝️ Drawing";
+          statusText.style.color = colorPicker.value;
+
+          if (lastX !== null && lastY !== null) {
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(lastX, lastY);
+            canvasCtx.lineTo(currentX, currentY);
+            
+            // Neon Glow Styling
+            const thickness = parseInt(lineWidthSlider.value);
+            canvasCtx.strokeStyle = colorPicker.value;
+            canvasCtx.lineWidth = thickness;
+            canvasCtx.lineCap = 'round';
+            canvasCtx.lineJoin = 'round';
+            canvasCtx.shadowBlur = thickness * 2.5; // Creates the neon glow
+            canvasCtx.shadowColor = colorPicker.value;
+            
+            canvasCtx.stroke();
+            
+            // Reset shadow so it doesn't mess with the eraser
+            canvasCtx.shadowBlur = 0; 
+          }
+          lastX = currentX;
+          lastY = currentY;
+        } 
+        else {
+          statusText.innerText = "Status: Idle";
+          statusText.style.color = "#fff";
+          lastX = null;
+          lastY = null;
+        }
+      } else {
+        statusText.innerText = "Status: Hand not detected";
+        statusText.style.color = "#fff";
+        lastX = null;
+        lastY = null;
+      }
+    }
+
+    // Initialize MediaPipe Hands
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+    
+    hands.setOptions({
+      maxNumHands: 1, // Track 1 hand to keep drawing stable
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+    hands.onResults(onResults);
+
+    // Initialize Camera
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 1280,
+      height: 720
+    });
+    
+    camera.start().catch(err => {
+      alert("Camera access denied or unavailable. Please ensure camera permissions are granted.");
+    });
+  </script>
+</body>
+</html>
