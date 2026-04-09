@@ -14,6 +14,10 @@ Draw on your screen using only hand gestures! No mouse or touchscreen needed. Pr
 - 💾 **Save Drawings** - Press 'S' to save your artwork as PNG
 - 🖼️ **Blended View** - See your drawing overlaid on camera feed (adjustable transparency)
 
+## 🌐 Live Demo
+
+Try the application online: [https://jolly-dodol-328363.netlify.app/](https://jolly-dodol-328363.netlify.app/)
+
 ## 🚀 Installation
 
 ### Prerequisites
